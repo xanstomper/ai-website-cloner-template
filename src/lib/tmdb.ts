@@ -96,6 +96,53 @@ function normList(items: TmdbItem[] = [], fallbackType?: MediaType): AnimeCardDa
 }
 
 /* ------------------------------------------------------------------ */
+/* Discover — browse by genre / type                                   */
+/* ------------------------------------------------------------------ */
+
+export type DiscoverType = "movie" | "tv" | "anime";
+
+/** TMDB genre ids that are shared across movie + tv where it matters. */
+export const DISCOVER_GENRES: { id: number; label: string }[] = [
+  { id: 28, label: "Action" },
+  { id: 12, label: "Adventure" },
+  { id: 16, label: "Animation" },
+  { id: 35, label: "Comedy" },
+  { id: 80, label: "Crime" },
+  { id: 99, label: "Documentary" },
+  { id: 18, label: "Drama" },
+  { id: 10751, label: "Family" },
+  { id: 14, label: "Fantasy" },
+  { id: 27, label: "Horror" },
+  { id: 9648, label: "Mystery" },
+  { id: 10749, label: "Romance" },
+  { id: 878, label: "Sci-Fi" },
+  { id: 53, label: "Thriller" },
+];
+
+export async function getDiscover(
+  type: DiscoverType,
+  genreId?: number,
+  page = 1,
+): Promise<AnimeCardData[]> {
+  const isAnime = type === "anime";
+  const endpoint = type === "movie" ? "/discover/movie" : "/discover/tv";
+  const params: Record<string, string> = {
+    sort_by: "popularity.desc",
+    page: String(page),
+    "vote_count.gte": "50",
+    include_adult: "false",
+  };
+  const genres: string[] = [];
+  if (isAnime) genres.push("16");
+  if (genreId) genres.push(String(genreId));
+  if (genres.length) params.with_genres = genres.join(",");
+  if (isAnime) params.with_origin_country = "JP";
+
+  const data = await tmdbGet<{ results: TmdbItem[] }>(endpoint, params);
+  return normList(data.results, type === "movie" ? "movie" : "tv");
+}
+
+/* ------------------------------------------------------------------ */
 /* Catalog sections                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -155,11 +202,143 @@ export async function getAnimeMovies(page = 1): Promise<AnimeCardData[]> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Movies (general catalog)                                            */
+/* ------------------------------------------------------------------ */
+
+export async function getTrendingMovies(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/trending/movie/week");
+  return normList(data.results, "movie");
+}
+
+export async function getPopularMovies(page = 1): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/movie/popular", {
+    page: String(page),
+  });
+  return normList(data.results, "movie");
+}
+
+export async function getTopMovies(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/movie/top_rated", { page: "1" });
+  return normList(data.results, "movie");
+}
+
+export async function getNowPlayingMovies(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/movie/now_playing", { page: "1" });
+  return normList(data.results, "movie");
+}
+
+/* ------------------------------------------------------------------ */
+/* Series (general TV catalog)                                         */
+/* ------------------------------------------------------------------ */
+
+export async function getTrendingSeries(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/trending/tv/week");
+  return normList(data.results, "tv");
+}
+
+export async function getPopularSeries(page = 1): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/tv/popular", {
+    page: String(page),
+  });
+  return normList(data.results, "tv");
+}
+
+export async function getTopSeries(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/tv/top_rated", { page: "1" });
+  return normList(data.results, "tv");
+}
+
+export async function getAiringSeries(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/tv/on_the_air", { page: "1" });
+  return normList(data.results, "tv");
+}
+
+/* ------------------------------------------------------------------ */
+/* Mixed (home page — everything)                                      */
+/* ------------------------------------------------------------------ */
+
+export async function getTrendingAll(): Promise<AnimeCardData[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/trending/all/week");
+  const items = (data.results || []).filter(
+    (i) => i.media_type === "tv" || i.media_type === "movie",
+  );
+  return normList(items);
+}
+
+/* ------------------------------------------------------------------ */
 /* Hero                                                                */
 /* ------------------------------------------------------------------ */
 
 interface TmdbImages {
   logos?: { file_path: string; iso_639_1: string | null }[];
+}
+
+interface TmdbVideos {
+  results?: {
+    key: string;
+    site: string;
+    type: string;
+    official?: boolean;
+    size?: number;
+  }[];
+}
+
+/** Pick the best YouTube trailer key from a TMDB videos payload. */
+function pickTrailerKey(videos: TmdbVideos): string | null {
+  const yt = (videos.results || []).filter((v) => v.site === "YouTube");
+  if (yt.length === 0) return null;
+  const rank = (v: (typeof yt)[number]) => {
+    let s = 0;
+    if (v.type === "Trailer") s += 4;
+    else if (v.type === "Teaser") s += 2;
+    if (v.official) s += 2;
+    if ((v.size ?? 0) >= 1080) s += 1;
+    return s;
+  };
+  return [...yt].sort((a, b) => rank(b) - rank(a))[0].key;
+}
+
+/** Build hero slides (with title logos + trailers) from any list of TMDB items. */
+async function buildHeroSlides(items: TmdbItem[], fallback?: MediaType): Promise<HeroSlide[]> {
+  const picks = (items || []).filter((i) => i.backdrop_path).slice(0, 6);
+  return Promise.all(
+    picks.map(async (item): Promise<HeroSlide> => {
+      const type = mediaOf(item, fallback);
+      let logo: string | undefined;
+      let trailer: string | null = null;
+      const [imgsRes, vidsRes] = await Promise.allSettled([
+        tmdbGet<TmdbImages>(`/${type}/${item.id}/images`, {
+          include_image_language: "en,null",
+        }),
+        tmdbGet<TmdbVideos>(`/${type}/${item.id}/videos`),
+      ]);
+      if (imgsRes.status === "fulfilled") {
+        const imgs = imgsRes.value;
+        const en = imgs.logos?.find((l) => l.iso_639_1 === "en") || imgs.logos?.[0];
+        if (en) logo = img(en.file_path, "w500");
+      }
+      if (vidsRes.status === "fulfilled") {
+        trailer = pickTrailerKey(vidsRes.value);
+      }
+      return {
+        id: `${type}-${item.id}`,
+        slug: `${type}-${item.id}`,
+        tmdbId: item.id,
+        mediaType: type,
+        title: item.name || item.title || "Untitled",
+        logo,
+        backdrop: img(item.backdrop_path, "w1280"),
+        trailer,
+        thumbnail: img(item.poster_path, "w500"),
+        synopsis: item.overview || "",
+        score: item.vote_average ? Math.round(item.vote_average * 10) : undefined,
+        year: yearOf(item),
+        episodeCount: item.number_of_episodes ?? null,
+        duration: type === "movie" ? undefined : 24,
+        format: type === "movie" ? "MOVIE" : "TV",
+      };
+    }),
+  );
 }
 
 export async function getHeroSlides(): Promise<HeroSlide[]> {
@@ -169,39 +348,36 @@ export async function getHeroSlides(): Promise<HeroSlide[]> {
     sort_by: "popularity.desc",
     "vote_count.gte": "300",
   });
-  const picks = (data.results || []).filter((i) => i.backdrop_path).slice(0, 6);
+  return buildHeroSlides(data.results, "tv");
+}
 
-  const slides = await Promise.all(
-    picks.map(async (item): Promise<HeroSlide> => {
-      let logo: string | undefined;
-      try {
-        const imgs = await tmdbGet<TmdbImages>(`/tv/${item.id}/images`, {
-          include_image_language: "en,null",
-        });
-        const en = imgs.logos?.find((l) => l.iso_639_1 === "en") || imgs.logos?.[0];
-        if (en) logo = img(en.file_path, "w500");
-      } catch {
-        /* logo optional */
-      }
-      return {
-        id: `tv-${item.id}`,
-        slug: `tv-${item.id}`,
-        tmdbId: item.id,
-        mediaType: "tv",
-        title: item.name || item.title || "Untitled",
-        logo,
-        backdrop: img(item.backdrop_path, "w1280"),
-        thumbnail: img(item.poster_path, "w500"),
-        synopsis: item.overview || "",
-        score: item.vote_average ? Math.round(item.vote_average * 10) : undefined,
-        year: yearOf(item),
-        episodeCount: item.number_of_episodes ?? null,
-        duration: 24,
-        format: "TV",
-      };
-    }),
+/** Mixed hero for the home page — trending movies + series. */
+export async function getHomeHeroSlides(): Promise<HeroSlide[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/trending/all/week");
+  const items = (data.results || []).filter(
+    (i) => (i.media_type === "tv" || i.media_type === "movie") && i.backdrop_path,
   );
-  return slides;
+  return buildHeroSlides(items);
+}
+
+export async function getMovieHeroSlides(): Promise<HeroSlide[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/movie/popular", { page: "1" });
+  return buildHeroSlides(data.results, "movie");
+}
+
+export async function getSeriesHeroSlides(): Promise<HeroSlide[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/tv/popular", { page: "1" });
+  return buildHeroSlides(data.results, "tv");
+}
+
+export async function getAnimeHeroSlides(): Promise<HeroSlide[]> {
+  const data = await tmdbGet<{ results: TmdbItem[] }>("/discover/tv", {
+    ...ANIME_DISCOVER,
+    page: "1",
+    sort_by: "popularity.desc",
+    "vote_count.gte": "200",
+  });
+  return buildHeroSlides(data.results, "tv");
 }
 
 /* ------------------------------------------------------------------ */

@@ -21,7 +21,7 @@ export function AnimeRow({ row }: { row: RowData }) {
   };
 
   return (
-    <section className="relative py-5 pl-6 md:pl-[92px]">
+    <section className="relative py-5 pl-6 md:pl-14">
       <div className="mb-3 flex items-center gap-3 pr-6">
         <h2 className="font-heading text-[21.6px] font-extrabold tracking-[-0.3px]">
           {row.heading}

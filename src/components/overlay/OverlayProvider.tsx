@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { AnimeCardData, AnimeDetail, EpisodeData } from "@/types/anime";
 import { resolveDetail, resolveSimilar } from "./resolveDetail";
-import { getDetail, getSeasonEpisodes, type MediaType } from "@/lib/tmdb";
+import type { MediaType } from "@/lib/tmdb";
 import { getStreamUrls, type StreamType } from "@/lib/providers";
 
 /* ----------------------------------------------------------------
@@ -216,9 +216,10 @@ function EpisodesOverlay({
     }
     let cancelled = false;
     setLoading(true);
-    getSeasonEpisodes(detail.tmdbId, season)
-      .then((eps) => {
-        if (!cancelled) setEpisodes(eps);
+    fetch(`/api/season/${detail.tmdbId}/${season}`)
+      .then((r) => (r.ok ? r.json() : { episodes: [] }))
+      .then((data: { episodes?: EpisodeData[] }) => {
+        if (!cancelled) setEpisodes(data.episodes ?? []);
       })
       .catch(() => {
         if (!cancelled) setEpisodes([]);
@@ -393,10 +394,12 @@ function CinematicOverlay({
                   <FilmIcon />
                   Trailer
                 </button>
-                <button className="co-episodes-btn" onClick={onOpenEpisodes}>
-                  <ListIcon />
-                  Episodes
-                </button>
+                {detail.episodeCount != null && detail.episodeCount > 0 && (
+                  <button className="co-episodes-btn" onClick={onOpenEpisodes}>
+                    <ListIcon />
+                    Episodes
+                  </button>
+                )}
                 <button
                   className={`co-icon-btn co-watchlist-btn${saved ? " watchlist-saved" : ""}`}
                   onClick={() => setSaved((v) => !v)}
@@ -497,9 +500,10 @@ export function OverlayProvider({ children }: { children: React.ReactNode }) {
     if (!card.tmdbId) return;
     const type: MediaType = card.mediaType === "movie" ? "movie" : "tv";
     let cancelled = false;
-    getDetail(type, card.tmdbId)
-      .then((d) => {
-        if (!cancelled) setDetail(d);
+    fetch(`/api/detail/${type}/${card.tmdbId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: (AnimeDetail & { error?: string }) | null) => {
+        if (!cancelled && d && !d.error) setDetail(d);
       })
       .catch(() => {});
     return () => {

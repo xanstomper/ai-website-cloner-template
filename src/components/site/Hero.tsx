@@ -9,16 +9,30 @@ import { useOverlay } from "@/components/overlay/OverlayProvider";
 export function Hero({ slides }: { slides: HeroSlide[] }) {
   const { openDetail } = useOverlay();
   const [idx, setIdx] = useState(0);
+  const [showTrailer, setShowTrailer] = useState(false);
   const count = slides.length;
 
   const go = useCallback((n: number) => setIdx((p) => (n + count) % count), [count]);
 
+  // Auto-advance slides. Give trailers longer to breathe before rotating.
   useEffect(() => {
-    const t = setInterval(() => setIdx((p) => (p + 1) % count), 7000);
+    const t = setInterval(() => setIdx((p) => (p + 1) % count), 12000);
     return () => clearInterval(t);
   }, [count]);
 
   const slide = slides[idx];
+  const trailerKey = slide?.trailer;
+
+  // Show the backdrop first, then fade the trailer in shortly after. Reset on
+  // every slide change so each title gets its own intro beat.
+  useEffect(() => {
+    setShowTrailer(false);
+    if (!trailerKey) return;
+    const t = setTimeout(() => setShowTrailer(true), 1400);
+    return () => clearTimeout(t);
+  }, [idx, trailerKey]);
+
+  if (!slide) return null;
 
   const slideCard: AnimeCardData = {
     id: slide.id,
@@ -47,12 +61,28 @@ export function Hero({ slides }: { slides: HeroSlide[] }) {
           />
         </div>
       ))}
+
+      {/* Trailer — muted autoplay video for the active title, over the backdrop */}
+      {trailerKey && (
+        <div
+          className="pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-1000"
+          style={{ opacity: showTrailer ? 1 : 0 }}
+        >
+          <iframe
+            key={trailerKey}
+            title={`${slide.title} trailer`}
+            src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&loop=1&playlist=${trailerKey}&playsinline=1&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&fs=0`}
+            allow="autoplay; encrypted-media"
+            className="absolute left-1/2 top-1/2 h-[135vw] min-h-full w-[240vh] min-w-full -translate-x-1/2 -translate-y-1/2 border-0"
+          />
+        </div>
+      )}
       {/* Scrims */}
       <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
 
       {/* Content */}
-      <div className="relative z-10 flex h-full max-w-[900px] flex-col justify-end gap-4 px-6 pb-24 md:pl-[92px]">
+      <div className="relative z-10 flex h-full max-w-[900px] flex-col justify-end gap-4 px-6 pb-24 md:pl-14">
         <h1 className="font-heading text-5xl font-extrabold tracking-tight md:text-7xl">
           {slide.title}
         </h1>
@@ -88,7 +118,7 @@ export function Hero({ slides }: { slides: HeroSlide[] }) {
       </div>
 
       {/* Slide selector: compact arrows + counter, bottom-left (matches reference) */}
-      <div className="absolute bottom-6 left-6 z-10 flex items-center gap-3 md:pl-[68px]">
+      <div className="absolute bottom-6 left-6 z-10 flex items-center gap-3 md:pl-14">
         <button
           onClick={() => go(idx - 1)}
           aria-label="Previous"

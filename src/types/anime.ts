@@ -89,6 +89,7 @@ export interface HeroSlide {
   title: string;
   logo?: string; // title logo image
   backdrop: string;
+  trailer?: string | null; // YouTube video key for the title's trailer
   thumbnail?: string; // small card used in the slide selector strip
   synopsis: string;
   score?: number; // percent match, e.g. 85
