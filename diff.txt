@@ -1,0 +1,20 @@
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index ac0da77..ffbecdf 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -26,6 +26,15 @@ export const metadata: Metadata = {
+   title: "Zynema - Watch Movies & Series Online Free",
+   description:
+     "Stream your favorite series and movies in HD, free on Zynema.",
++  icons: {
++    icon: [
++      { url: "/icons/icon.png", type: "image/png", sizes: "512x512" },
++    ],
++    shortcut: ["/favicon.ico"],
++    apple: [
++      { url: "/icons/apple-touch-icon.png", sizes: "180x180" },
++    ],
++  },
+ };
+ 
+ export default function RootLayout({
